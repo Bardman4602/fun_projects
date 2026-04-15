@@ -1,0 +1,351 @@
+:root {
+  color-scheme: light;
+  --bg-top: #fff8ea;
+  --bg-bottom: #d8efe2;
+  --panel: rgba(255, 252, 246, 0.88);
+  --panel-border: rgba(50, 67, 58, 0.14);
+  --text: #1f2b24;
+  --muted: #5f6d65;
+  --correct: #2f8f62;
+  --present: #d19c22;
+  --absent: #7f8c84;
+  --shadow: 0 18px 45px rgba(47, 61, 54, 0.12);
+  --tile-size: min(13vw, 4.2rem);
+  --tile-gap: 0.6rem;
+  --radius: 1.1rem;
+  --font-heading: "Trebuchet MS", "Segoe UI", sans-serif;
+  --font-body: "Verdana", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-body);
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(242, 186, 70, 0.18), transparent 24%),
+    linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+}
+
+body.colorblind-mode {
+  --correct: #2876c9;
+  --present: #c66b14;
+  --absent: #6d7781;
+}
+
+.app-shell {
+  width: min(92vw, 780px);
+  margin: 0 auto;
+  padding: 2rem 0 2.5rem;
+}
+
+.hero,
+.control-panel,
+.status-card,
+.definition-card,
+.legend,
+.keyboard {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.hero {
+  padding: 1.4rem 1.5rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+h1 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: clamp(2.3rem, 7vw, 4rem);
+  line-height: 0.95;
+}
+
+.hero-copy {
+  margin: 0.8rem 0 0;
+  max-width: 36rem;
+  color: var(--muted);
+}
+
+.control-panel {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  justify-content: space-between;
+  padding: 1rem 1.2rem;
+  margin-top: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.92rem;
+}
+
+.toggle-field {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0;
+  font-size: 0.92rem;
+}
+
+.toggle-copy {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.toggle-field input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--correct);
+}
+
+select,
+button {
+  border: 1px solid rgba(31, 43, 36, 0.18);
+  border-radius: 0.9rem;
+  background: #fffdf9;
+  color: var(--text);
+  font: inherit;
+}
+
+select {
+  min-width: 11rem;
+  padding: 0.8rem 1rem;
+}
+
+button {
+  padding: 0.85rem 1.15rem;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(31, 43, 36, 0.12);
+  background: #fff7df;
+}
+
+.status-card {
+  margin-top: 1rem;
+  padding: 1rem 1.2rem;
+}
+
+#status-message {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+}
+
+.definition-card {
+  margin-top: 1rem;
+  padding: 1rem 1.2rem;
+}
+
+.hidden {
+  display: none;
+}
+
+.definition-label {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.definition-word {
+  margin: 0.45rem 0 0;
+  font-family: var(--font-heading);
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.definition-text {
+  margin: 0.45rem 0 0;
+  line-height: 1.5;
+}
+
+.definition-link {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0.8rem;
+  color: var(--correct);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.definition-link:hover {
+  text-decoration: underline;
+}
+
+.board {
+  display: grid;
+  justify-content: center;
+  gap: var(--tile-gap);
+  margin: 1.4rem auto;
+}
+
+.board-row {
+  display: grid;
+  grid-template-columns: repeat(5, var(--tile-size));
+  gap: var(--tile-gap);
+}
+
+.tile {
+  width: var(--tile-size);
+  height: var(--tile-size);
+  border-radius: 1rem;
+  border: 2px solid rgba(31, 43, 36, 0.18);
+  background: rgba(255, 255, 255, 0.76);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: clamp(1.2rem, 4vw, 1.85rem);
+  text-transform: uppercase;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+}
+
+.tile.filled {
+  border-color: rgba(31, 43, 36, 0.4);
+  transform: translateY(-1px);
+}
+
+.tile.correct,
+.key.correct {
+  background: var(--correct);
+  border-color: var(--correct);
+  color: #fff;
+}
+
+.tile.present,
+.key.present {
+  background: var(--present);
+  border-color: var(--present);
+  color: #fff;
+}
+
+.tile.absent,
+.key.absent {
+  background: var(--absent);
+  border-color: var(--absent);
+  color: #fff;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.2rem;
+  justify-content: center;
+  padding: 0.95rem 1rem;
+}
+
+.legend-chip {
+  display: inline-block;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 0.3rem;
+  margin-right: 0.45rem;
+  vertical-align: middle;
+}
+
+.legend-chip.correct {
+  background: var(--correct);
+}
+
+.legend-chip.present {
+  background: var(--present);
+}
+
+.legend-chip.absent {
+  background: var(--absent);
+}
+
+.keyboard {
+  margin-top: 1rem;
+  padding: 1rem;
+}
+
+.keyboard-row {
+  display: flex;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 0.45rem;
+}
+
+.keyboard-row:first-child {
+  margin-top: 0;
+}
+
+.key {
+  min-width: 2.7rem;
+  height: 3.2rem;
+  padding: 0 0.8rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(31, 43, 36, 0.16);
+  background: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.key.wide {
+  min-width: 4.8rem;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    width: min(96vw, 780px);
+    padding-top: 1rem;
+  }
+
+  .control-panel {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .field,
+  .toggle-field,
+  select,
+  button {
+    width: 100%;
+  }
+
+  .toggle-field input {
+    width: 1.25rem;
+  }
+
+  .legend {
+    justify-content: flex-start;
+  }
+
+  .key {
+    min-width: 2rem;
+    height: 3rem;
+    padding: 0 0.45rem;
+    font-size: 0.82rem;
+  }
+}

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="da">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wo(ø)rdle</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="hero">        
+        <h1>Wo(ø)rdle</h1>        
+      </section>
+
+      <section class="control-panel">
+        <label class="field">
+          <span>Sprog</span>
+          <select id="language-select">
+            <option value="da">Dansk</option>
+            <option value="en">Engelsk</option>
+          </select>
+        </label>
+        <label class="toggle-field" for="colorblind-toggle">
+          <span>Farveblind tilstand</span>
+          <!-- <span class="toggle-copy">Bruger blå og orange i stedet for grøn og gul.</span> -->
+          <input id="colorblind-toggle" type="checkbox" />
+        </label>
+        <button id="new-game-button" type="button">Nyt spil</button>
+      </section>
+
+      <section class="status-card">
+        <p id="status-message">Indlæser ordliste...</p>
+        <p id="subtitle" class="subtitle"></p>
+      </section>
+
+      <section id="definition-card" class="definition-card hidden" aria-live="polite">
+        <p class="definition-label">Ordforklaring</p>
+        <p id="definition-word" class="definition-word"></p>
+        <p id="definition-text" class="definition-text"></p>
+        <a id="definition-link" class="definition-link hidden" href="#" target="_blank" rel="noreferrer">
+          Slå op i ordbogen
+        </a>
+      </section>
+
+      <section id="board" class="board" aria-label="Wordle board"></section>
+
+      <section class="legend">
+        <div><span class="legend-chip correct"></span> Rigtig placering</div>
+        <div><span class="legend-chip present"></span> Findes i ordet</div>
+        <div><span class="legend-chip absent"></span> Findes ikke i ordet</div>
+      </section>
+
+      <section id="keyboard" class="keyboard" aria-label="On-screen keyboard"></section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
