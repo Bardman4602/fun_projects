@@ -13,3 +13,10 @@ in a terminal.
 5. Have fun
 
 (6. use the wordlesolver script if the puzzle is too hard.)
+
+# WordleSolver
+1. select wordist by editing the wordlist line ('words', 'dkwords')
+2. type in your grey letters in the GREY list.
+3. type in your yellows and their positions in the YELLOWS dict.
+4. Do the same for the potential greens.
+5. Enjoy
