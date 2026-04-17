@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import threading
 from collections import Counter
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,6 +19,7 @@ WORD_LENGTH = 5
 BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 WORDLIST_DIR = BASE_DIR / "wordlists"
+STATS_FILE = BASE_DIR / "player_stats.json"
 WORDLISTS = {
     "da": ("Dansk", WORDLIST_DIR / "dkwords.csv"),
     "en": ("English", WORDLIST_DIR / "words.csv"),
@@ -60,6 +62,7 @@ CONTENT_TYPES = {
     ".css": "text/css; charset=utf-8",
 }
 FALLBACK_PORTS = (8765, 8080, 3000, 5500, 0)
+STATS_LOCK = threading.Lock()
 
 
 def parse_args() -> argparse.Namespace:
@@ -70,7 +73,12 @@ def parse_args() -> argparse.Namespace:
         "-l",
         "--language",
         choices=sorted(WORDLISTS),
-        help="Vælg sprog på forhånd: da eller en.",
+        help="Vælg sprog på forhånd: da eller en. Bruges også sammen med --reset-stats.",
+    )
+    parser.add_argument(
+        "--reset-stats",
+        metavar="USERNAME",
+        help="Nulstil gemt statistik for et brugernavn. Brug evt. sammen med --language.",
     )
     parser.add_argument(
         "--web",
@@ -108,6 +116,194 @@ def load_words(language_code: str) -> list[str]:
 
     WORD_CACHE[language_code] = sorted(words)
     return WORD_CACHE[language_code]
+
+
+def normalize_username(username: str) -> str:
+    return " ".join(username.split()).strip()
+
+
+def build_empty_stats() -> dict[str, int | dict[str, int]]:
+    return {
+        "played": 0,
+        "wins": 0,
+        "currentStreak": 0,
+        "maxStreak": 0,
+        "guessDistribution": {str(attempt): 0 for attempt in range(1, MAX_ATTEMPTS + 1)},
+    }
+
+
+def coerce_stats(raw_stats: object) -> dict[str, int | dict[str, int]]:
+    stats = build_empty_stats()
+    if not isinstance(raw_stats, dict):
+        return stats
+
+    for field in ("played", "wins", "currentStreak", "maxStreak"):
+        value = raw_stats.get(field)
+        if isinstance(value, int) and value >= 0:
+            stats[field] = value
+
+    raw_distribution = raw_stats.get("guessDistribution")
+    if isinstance(raw_distribution, dict):
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            value = raw_distribution.get(str(attempt))
+            if isinstance(value, int) and value >= 0:
+                stats["guessDistribution"][str(attempt)] = value
+
+    return stats
+
+
+def read_stats_store(stats_path: Path = STATS_FILE) -> dict[str, object]:
+    if not stats_path.exists():
+        return {"users": {}}
+
+    try:
+        payload = json.loads(stats_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"users": {}}
+
+    if not isinstance(payload, dict):
+        return {"users": {}}
+
+    users = payload.get("users")
+    if not isinstance(users, dict):
+        return {"users": {}}
+
+    return {"users": users}
+
+
+def write_stats_store(store: dict[str, object], stats_path: Path = STATS_FILE) -> None:
+    stats_path.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def build_stats_payload(username: str, language_code: str, stats: dict[str, int | dict[str, int]]) -> dict[str, object]:
+    played = int(stats["played"])
+    wins = int(stats["wins"])
+    guess_distribution = stats["guessDistribution"]
+    win_percentage = round((wins / played) * 100) if played else 0
+
+    return {
+        "username": username,
+        "language": language_code,
+        "played": played,
+        "wins": wins,
+        "winPercentage": win_percentage,
+        "currentStreak": int(stats["currentStreak"]),
+        "maxStreak": int(stats["maxStreak"]),
+        "guessDistribution": [
+            {"attempt": attempt, "count": int(guess_distribution[str(attempt)])}
+            for attempt in range(1, MAX_ATTEMPTS + 1)
+        ],
+    }
+
+
+def get_stats_payload(username: str, language_code: str, stats_path: Path = STATS_FILE) -> dict[str, object]:
+    normalized_username = normalize_username(username)
+    if not normalized_username:
+        raise ValueError("Brugernavn mangler.")
+    if language_code not in WORDLISTS:
+        raise ValueError("Ukendt sprog.")
+
+    with STATS_LOCK:
+        store = read_stats_store(stats_path)
+        users = store["users"]
+        user_entry = users.get(normalized_username.casefold(), {})
+        if not isinstance(user_entry, dict):
+            user_entry = {}
+        languages = user_entry.get("languages", {})
+        if not isinstance(languages, dict):
+            languages = {}
+        stats = coerce_stats(languages.get(language_code))
+
+    return build_stats_payload(normalized_username, language_code, stats)
+
+
+def record_game_result(
+    username: str,
+    language_code: str,
+    won: bool,
+    attempts: int,
+    stats_path: Path = STATS_FILE,
+) -> dict[str, object]:
+    normalized_username = normalize_username(username)
+    if not normalized_username:
+        raise ValueError("Brugernavn mangler.")
+    if language_code not in WORDLISTS:
+        raise ValueError("Ukendt sprog.")
+    if attempts < 1 or attempts > MAX_ATTEMPTS:
+        raise ValueError("Ugyldigt antal forsøg.")
+
+    with STATS_LOCK:
+        store = read_stats_store(stats_path)
+        users = store["users"]
+        user_key = normalized_username.casefold()
+        user_entry = users.get(user_key)
+        if not isinstance(user_entry, dict):
+            user_entry = {"displayName": normalized_username, "languages": {}}
+
+        languages = user_entry.get("languages")
+        if not isinstance(languages, dict):
+            languages = {}
+
+        stats = coerce_stats(languages.get(language_code))
+        stats["played"] += 1
+
+        if won:
+            stats["wins"] += 1
+            stats["currentStreak"] += 1
+            stats["maxStreak"] = max(int(stats["maxStreak"]), int(stats["currentStreak"]))
+            stats["guessDistribution"][str(attempts)] += 1
+        else:
+            stats["currentStreak"] = 0
+
+        user_entry["displayName"] = normalized_username
+        languages[language_code] = stats
+        user_entry["languages"] = languages
+        users[user_key] = user_entry
+        store["users"] = users
+        write_stats_store(store, stats_path)
+
+    return build_stats_payload(normalized_username, language_code, stats)
+
+
+def reset_stats(
+    username: str,
+    language_code: str | None = None,
+    stats_path: Path = STATS_FILE,
+) -> bool:
+    normalized_username = normalize_username(username)
+    if not normalized_username:
+        raise ValueError("Brugernavn mangler.")
+    if language_code is not None and language_code not in WORDLISTS:
+        raise ValueError("Ukendt sprog.")
+
+    with STATS_LOCK:
+        store = read_stats_store(stats_path)
+        users = store["users"]
+        user_key = normalized_username.casefold()
+        user_entry = users.get(user_key)
+        if not isinstance(user_entry, dict):
+            return False
+
+        if language_code is None:
+            users.pop(user_key, None)
+            store["users"] = users
+            write_stats_store(store, stats_path)
+            return True
+
+        languages = user_entry.get("languages")
+        if not isinstance(languages, dict) or language_code not in languages:
+            return False
+
+        languages.pop(language_code, None)
+        if languages:
+            user_entry["languages"] = languages
+            users[user_key] = user_entry
+        else:
+            users.pop(user_key, None)
+
+        store["users"] = users
+        write_stats_store(store, stats_path)
+        return True
 
 
 def build_dictionary_lookup_url(language_code: str, word: str) -> str:
@@ -345,12 +541,25 @@ class LocalWordleHandler(BaseHTTPRequestHandler):
             self.serve_definition(parsed_url.query)
             return
 
+        if parsed_url.path == "/api/stats":
+            self.serve_stats(parsed_url.query)
+            return
+
         filepath = STATIC_FILES.get(parsed_url.path)
         if filepath is None:
             self.send_error(HTTPStatus.NOT_FOUND, "Siden blev ikke fundet.")
             return
 
         self.serve_static_file(filepath)
+
+    def do_POST(self) -> None:
+        parsed_url = urlparse(self.path)
+
+        if parsed_url.path == "/api/stats":
+            self.record_stats()
+            return
+
+        self.send_error(HTTPStatus.NOT_FOUND, "Siden blev ikke fundet.")
 
     def serve_static_file(self, filepath: Path) -> None:
         if not filepath.exists():
@@ -372,11 +581,7 @@ class LocalWordleHandler(BaseHTTPRequestHandler):
             return
 
         payload = build_word_payload(language_code)
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+        self.send_json_response(payload)
 
     def serve_definition(self, query: str) -> None:
         params = parse_qs(query)
@@ -392,6 +597,59 @@ class LocalWordleHandler(BaseHTTPRequestHandler):
             return
 
         payload = build_definition_payload(language_code, word)
+        self.send_json_response(payload)
+
+    def serve_stats(self, query: str) -> None:
+        params = parse_qs(query)
+        username = params.get("username", [""])[0]
+        language_code = params.get("language", ["da"])[0].lower()
+
+        try:
+            payload = json.dumps(
+                get_stats_payload(username, language_code),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        except ValueError as error:
+            self.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+
+        self.send_json_response(payload)
+
+    def record_stats(self) -> None:
+        content_length = int(self.headers.get("Content-Length", "0"))
+
+        try:
+            raw_body = self.rfile.read(content_length)
+            body = json.loads(raw_body.decode("utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            self.send_error(HTTPStatus.BAD_REQUEST, "Ugyldig JSON.")
+            return
+
+        if not isinstance(body, dict):
+            self.send_error(HTTPStatus.BAD_REQUEST, "Ugyldig JSON.")
+            return
+
+        username = body.get("username", "")
+        language_code = str(body.get("language", "da")).lower()
+        won = body.get("won")
+        attempts = body.get("attempts")
+
+        if not isinstance(won, bool) or not isinstance(attempts, int):
+            self.send_error(HTTPStatus.BAD_REQUEST, "Ugyldigt resultat.")
+            return
+
+        try:
+            payload = json.dumps(
+                record_game_result(username, language_code, won, attempts),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        except ValueError as error:
+            self.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+
+        self.send_json_response(payload)
+
+    def send_json_response(self, payload: bytes) -> None:
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
@@ -453,8 +711,30 @@ def run_web_server(host: str, port: int) -> None:
         server.server_close()
 
 
+def run_reset_stats(username: str, language_code: str | None) -> None:
+    was_reset = reset_stats(username, language_code)
+    normalized_username = normalize_username(username)
+
+    if was_reset:
+        if language_code:
+            language_name, _ = WORDLISTS[language_code]
+            print(f"Statistik for '{normalized_username}' på {language_name} blev nulstillet.")
+        else:
+            print(f"Al statistik for '{normalized_username}' blev nulstillet.")
+        return
+
+    if language_code:
+        language_name, _ = WORDLISTS[language_code]
+        print(f"Der blev ikke fundet statistik for '{normalized_username}' på {language_name}.")
+    else:
+        print(f"Der blev ikke fundet statistik for '{normalized_username}'.")
+
+
 def main() -> None:
     args = parse_args()
+    if args.reset_stats:
+        run_reset_stats(args.reset_stats, args.language)
+        return
     if args.web:
         run_web_server(args.host, args.port)
         return

@@ -1,27 +1,27 @@
 from pathlib import Path
 
 # Choose wordlist
-WORDLIST = "words.csv"
+WORDLIST = "dkwords.csv"
 
 # all the grey letters inside ""
-GREY = set("pisbockylrtrv")
+GREY = set("nisabrtg")
 
 YELLOW = {
     # "letter": {index 0-4} 
-    # "o": {2},
-    # "s": {4},
-    # "t": {4},
+     #"n": {2, 1},
+     #"t": {0, 4, 3},
+     #"s": {4, 0},
     # "u": {2},
     # "r": {3}
 }
 
 GREEN = {
     # index: "letter"
-    #0: "h",
-    1: "l",
-    #2: "a",
-    #3: "t",
-    #4: "e",
+    0: "k",
+    #1: "e",
+    2: "o",
+    3: "v",
+    4: "e",
     
 }
 

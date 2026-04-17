@@ -18,10 +18,12 @@ const KEYBOARD_LAYOUTS = {
 };
 
 const COLORBLIND_STORAGE_KEY = "localwordle-colorblind-mode";
+const USERNAME_STORAGE_KEY = "localwordle-username";
 
 const state = {
   language: "da",
   languageName: "Dansk",
+  username: "",
   words: [],
   validWords: new Set(),
   answer: "",
@@ -34,15 +36,28 @@ const state = {
   colorblindMode: false,
   answerDefinition: null,
   definitionRequestId: 0,
+  stats: null,
+  statsRequestId: 0,
+  lastCompletedAttempt: null,
 };
 
 const boardElement = document.querySelector("#board");
 const keyboardElement = document.querySelector("#keyboard");
 const languageSelect = document.querySelector("#language-select");
+const usernameInput = document.querySelector("#username-input");
 const colorblindToggle = document.querySelector("#colorblind-toggle");
 const newGameButton = document.querySelector("#new-game-button");
 const statusMessage = document.querySelector("#status-message");
 const subtitle = document.querySelector("#subtitle");
+const statsCard = document.querySelector("#stats-card");
+const statsSummary = document.querySelector("#stats-summary");
+const statsEmpty = document.querySelector("#stats-empty");
+const statsContent = document.querySelector("#stats-content");
+const statsPlayed = document.querySelector("#stats-played");
+const statsWinPercentage = document.querySelector("#stats-win-percentage");
+const statsCurrentStreak = document.querySelector("#stats-current-streak");
+const statsMaxStreak = document.querySelector("#stats-max-streak");
+const guessDistributionElement = document.querySelector("#guess-distribution");
 const definitionCard = document.querySelector("#definition-card");
 const definitionWord = document.querySelector("#definition-word");
 const definitionText = document.querySelector("#definition-text");
@@ -83,6 +98,98 @@ function scoreGuess(guess, answer) {
 function setStatus(message, detail = "") {
   statusMessage.textContent = message;
   subtitle.textContent = detail;
+}
+
+function normalizeUsername(username) {
+  return username.trim().replace(/\s+/g, " ").slice(0, 24);
+}
+
+function readSavedUsername() {
+  try {
+    return normalizeUsername(window.localStorage.getItem(USERNAME_STORAGE_KEY) ?? "");
+  } catch {
+    return "";
+  }
+}
+
+function saveUsername(username) {
+  try {
+    if (username) {
+      window.localStorage.setItem(USERNAME_STORAGE_KEY, username);
+    } else {
+      window.localStorage.removeItem(USERNAME_STORAGE_KEY);
+    }
+  } catch {
+    return;
+  }
+}
+
+function createDistributionRow(entry, maxCount) {
+  const row = document.createElement("div");
+  row.className = "distribution-row";
+
+  const label = document.createElement("span");
+  label.className = "distribution-attempt";
+  label.textContent = entry.attempt;
+
+  const bar = document.createElement("div");
+  bar.className = "distribution-bar";
+  if (state.lastCompletedAttempt === entry.attempt && entry.count > 0) {
+    bar.classList.add("active");
+  }
+
+  const fill = document.createElement("div");
+  fill.className = "distribution-fill";
+  const width = entry.count > 0 ? Math.max(12, Math.round((entry.count / maxCount) * 100)) : 0;
+  fill.style.width = `${width}%`;
+  fill.textContent = String(entry.count);
+  bar.appendChild(fill);
+
+  row.append(label, bar);
+  return row;
+}
+
+function renderStats() {
+  if (!state.isGameOver) {
+    statsCard.classList.add("hidden");
+    guessDistributionElement.innerHTML = "";
+    return;
+  }
+
+  statsCard.classList.remove("hidden");
+
+  if (!state.username) {
+    statsSummary.textContent = "Vælg et brugernavn for at gemme statistik.";
+    statsEmpty.textContent =
+      "Resultater gemmes pr. brugernavn og sprog, så du kan lukke spillet og fortsætte senere.";
+    statsEmpty.classList.remove("hidden");
+    statsContent.classList.add("hidden");
+    guessDistributionElement.innerHTML = "";
+    return;
+  }
+
+  if (!state.stats) {
+    statsSummary.textContent = `Henter statistik for ${state.username}...`;
+    statsEmpty.textContent = "Statistikken bliver indlæst automatisk.";
+    statsEmpty.classList.remove("hidden");
+    statsContent.classList.add("hidden");
+    guessDistributionElement.innerHTML = "";
+    return;
+  }
+
+  statsSummary.textContent = `Statistik for ${state.stats.username} på ${state.languageName}`;
+  statsEmpty.classList.add("hidden");
+  statsContent.classList.remove("hidden");
+  statsPlayed.textContent = String(state.stats.played);
+  statsWinPercentage.textContent = String(state.stats.winPercentage);
+  statsCurrentStreak.textContent = String(state.stats.currentStreak);
+  statsMaxStreak.textContent = String(state.stats.maxStreak);
+
+  guessDistributionElement.innerHTML = "";
+  const maxCount = Math.max(1, ...state.stats.guessDistribution.map((entry) => entry.count));
+  for (const entry of state.stats.guessDistribution) {
+    guessDistributionElement.appendChild(createDistributionRow(entry, maxCount));
+  }
 }
 
 function renderDefinition() {
@@ -135,6 +242,90 @@ function applyColorblindMode() {
     window.localStorage.setItem(COLORBLIND_STORAGE_KEY, String(state.colorblindMode));
   } catch {
     return;
+  }
+}
+
+async function loadStats() {
+  if (!state.username) {
+    state.stats = null;
+    renderStats();
+    return;
+  }
+
+  const requestId = state.statsRequestId + 1;
+  state.statsRequestId = requestId;
+  state.stats = null;
+  renderStats();
+
+  try {
+    const response = await fetch(
+      `/api/stats?username=${encodeURIComponent(state.username)}&language=${encodeURIComponent(state.language)}`
+    );
+    if (!response.ok) {
+      throw new Error("Kunne ikke hente statistik.");
+    }
+
+    const payload = await response.json();
+    if (requestId !== state.statsRequestId) {
+      return;
+    }
+    state.stats = payload;
+  } catch (error) {
+    if (requestId !== state.statsRequestId) {
+      return;
+    }
+    state.stats = null;
+    statsSummary.textContent = `Kunne ikke hente statistik for ${state.username}.`;
+    statsEmpty.textContent = error.message;
+    statsEmpty.classList.remove("hidden");
+    statsContent.classList.add("hidden");
+    guessDistributionElement.innerHTML = "";
+    return;
+  }
+
+  renderStats();
+}
+
+async function saveCompletedGame(win) {
+  if (!state.username) {
+    renderStats();
+    return;
+  }
+
+  const requestId = state.statsRequestId + 1;
+  state.statsRequestId = requestId;
+
+  try {
+    const response = await fetch("/api/stats", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        username: state.username,
+        language: state.language,
+        won: win,
+        attempts: state.guesses.length,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error("Kunne ikke gemme statistik.");
+    }
+
+    const payload = await response.json();
+    if (requestId !== state.statsRequestId) {
+      return;
+    }
+    state.stats = payload;
+    renderStats();
+  } catch (error) {
+    if (requestId !== state.statsRequestId) {
+      return;
+    }
+    statsSummary.textContent = `Kunne ikke gemme statistik for ${state.username}.`;
+    statsEmpty.textContent = error.message;
+    statsEmpty.classList.remove("hidden");
+    statsContent.classList.add("hidden");
   }
 }
 
@@ -276,8 +467,10 @@ function startNewGame() {
   state.currentGuess = "";
   state.keyboardState = {};
   state.isGameOver = false;
+  state.lastCompletedAttempt = null;
   state.definitionRequestId += 1;
   clearDefinition();
+  renderStats();
 
   setStatus(
     `Nyt spil startet på ${state.languageName}.`,
@@ -305,16 +498,20 @@ async function loadLanguage(language) {
   languageSelect.value = payload.language;
   renderKeyboard();
   startNewGame();
+  await loadStats();
 }
 
 function finishGame(win) {
   state.isGameOver = true;
+  state.lastCompletedAttempt = win ? state.guesses.length : null;
+  renderStats();
   if (win) {
     setStatus(
       "Du vandt!",
       `Ordet var ${state.answer.toUpperCase()}. Tryk på "Nyt spil" for en ny runde.`
     );
     loadAnswerDefinition();
+    saveCompletedGame(true);
     return;
   }
 
@@ -323,6 +520,7 @@ function finishGame(win) {
     `Ordet var ${state.answer.toUpperCase()}. Tryk på "Nyt spil" for at prøve igen.`
   );
   loadAnswerDefinition();
+  saveCompletedGame(false);
 }
 
 function submitGuess() {
@@ -371,6 +569,18 @@ function isLetterKey(key) {
   return /^[a-zæøå]$/i.test(key);
 }
 
+function isTypingTarget(target) {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  if (target.isContentEditable) {
+    return true;
+  }
+
+  return ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
+}
+
 function handleInput(key) {
   if (key === "enter") {
     submitGuess();
@@ -399,6 +609,10 @@ function handleInput(key) {
 }
 
 document.addEventListener("keydown", (event) => {
+  if (isTypingTarget(event.target)) {
+    return;
+  }
+
   if (event.metaKey || event.ctrlKey || event.altKey) {
     return;
   }
@@ -429,6 +643,25 @@ languageSelect.addEventListener("change", async (event) => {
   }
 });
 
+usernameInput.addEventListener("change", async (event) => {
+  const nextUsername = normalizeUsername(event.target.value);
+  state.username = nextUsername;
+  usernameInput.value = nextUsername;
+  saveUsername(nextUsername);
+  state.stats = null;
+  state.lastCompletedAttempt = null;
+  await loadStats();
+});
+
+usernameInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") {
+    return;
+  }
+
+  event.preventDefault();
+  usernameInput.blur();
+});
+
 newGameButton.addEventListener("click", () => {
   if (!state.words.length) {
     return;
@@ -452,7 +685,10 @@ definitionLink.addEventListener("click", (event) => {
 });
 
 state.colorblindMode = readSavedColorblindMode();
+state.username = readSavedUsername();
+usernameInput.value = state.username;
 applyColorblindMode();
+renderStats();
 
 loadLanguage(state.language).catch((error) => {
   setStatus("Kunne ikke starte spillet.", error.message);

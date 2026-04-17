@@ -20,6 +20,16 @@
             <option value="en">Engelsk</option>
           </select>
         </label>
+        <label class="field">
+          <span>Brugernavn</span>
+          <input
+            id="username-input"
+            type="text"
+            maxlength="24"
+            placeholder="Gem statistik som..."
+            autocomplete="nickname"
+          />
+        </label>
         <label class="toggle-field" for="colorblind-toggle">
           <span>Farveblind tilstand</span>
           <!-- <span class="toggle-copy">Bruger blå og orange i stedet for grøn og gul.</span> -->
@@ -31,6 +41,40 @@
       <section class="status-card">
         <p id="status-message">Indlæser ordliste...</p>
         <p id="subtitle" class="subtitle"></p>
+      </section>
+
+      <section id="stats-card" class="stats-card" aria-live="polite">
+        <p class="definition-label">Spillerstatistik</p>
+        <p id="stats-summary" class="stats-summary">Vælg et brugernavn for at gemme statistik.</p>
+        <p id="stats-empty" class="stats-empty">
+          Resultater gemmes pr. brugernavn og sprog, så du kan lukke spillet og fortsætte senere.
+        </p>
+
+        <div id="stats-content" class="stats-content hidden">
+          <div class="stats-grid">
+            <div class="stat-box">
+              <span id="stats-played" class="stat-value">0</span>
+              <span class="stat-label">Spillet</span>
+            </div>
+            <div class="stat-box">
+              <span id="stats-win-percentage" class="stat-value">0</span>
+              <span class="stat-label">Win %</span>
+            </div>
+            <div class="stat-box">
+              <span id="stats-current-streak" class="stat-value">0</span>
+              <span class="stat-label">Nuværende streak</span>
+            </div>
+            <div class="stat-box">
+              <span id="stats-max-streak" class="stat-value">0</span>
+              <span class="stat-label">Bedste streak</span>
+            </div>
+          </div>
+
+          <div class="distribution">
+            <p class="distribution-label">Guess distribution</p>
+            <div id="guess-distribution" class="distribution-list"></div>
+          </div>
+        </div>
       </section>
 
       <section id="definition-card" class="definition-card hidden" aria-live="polite">

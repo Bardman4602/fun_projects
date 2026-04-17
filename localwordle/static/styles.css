@@ -47,6 +47,7 @@ body.colorblind-mode {
 .hero,
 .control-panel,
 .status-card,
+.stats-card,
 .definition-card,
 .legend,
 .keyboard {
@@ -118,6 +119,7 @@ h1 {
 }
 
 select,
+input,
 button {
   border: 1px solid rgba(31, 43, 36, 0.18);
   border-radius: 0.9rem;
@@ -127,6 +129,11 @@ button {
 }
 
 select {
+  min-width: 11rem;
+  padding: 0.8rem 1rem;
+}
+
+input {
   min-width: 11rem;
   padding: 0.8rem 1rem;
 }
@@ -160,6 +167,11 @@ button:hover {
 }
 
 .definition-card {
+  margin-top: 1rem;
+  padding: 1rem 1.2rem;
+}
+
+.stats-card {
   margin-top: 1rem;
   padding: 1rem 1.2rem;
 }
@@ -199,6 +211,95 @@ button:hover {
 
 .definition-link:hover {
   text-decoration: underline;
+}
+
+.stats-summary,
+.stats-empty {
+  margin: 0.45rem 0 0;
+  color: var(--muted);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.stat-box {
+  padding: 0.8rem 0.7rem;
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(31, 43, 36, 0.08);
+  text-align: center;
+}
+
+.stat-value {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: clamp(1.8rem, 4vw, 2.5rem);
+  line-height: 1;
+}
+
+.stat-label {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.distribution {
+  margin-top: 1rem;
+}
+
+.distribution-label {
+  margin: 0 0 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.distribution-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.distribution-row {
+  display: grid;
+  grid-template-columns: 1.5rem minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.distribution-attempt {
+  font-weight: 700;
+  text-align: right;
+}
+
+.distribution-bar {
+  min-height: 1.8rem;
+  display: flex;
+  align-items: center;
+  background: rgba(31, 43, 36, 0.08);
+  border-radius: 0.6rem;
+  overflow: hidden;
+}
+
+.distribution-fill {
+  min-width: 2rem;
+  min-height: 1.8rem;
+  padding: 0 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: rgba(31, 43, 36, 0.62);
+  color: #fff;
+  font-weight: 700;
+}
+
+.distribution-bar.active .distribution-fill {
+  background: var(--correct);
 }
 
 .board {
@@ -329,9 +430,14 @@ button:hover {
 
   .field,
   .toggle-field,
+  input,
   select,
   button {
     width: 100%;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .toggle-field input {

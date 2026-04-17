@@ -1,15 +1,22 @@
 import json
 import unittest
+from pathlib import Path
+from uuid import uuid4
 from unittest.mock import patch
 
 from main import (
     WORDLISTS,
+    build_empty_stats,
     build_definition_payload,
     build_dictionary_lookup_label,
     create_web_server,
     extract_online_definition,
     get_port_candidates,
+    get_stats_payload,
     load_words,
+    normalize_username,
+    record_game_result,
+    reset_stats,
     render_guess,
     score_guess,
 )
@@ -85,6 +92,98 @@ class WordListTests(unittest.TestCase):
     def test_build_dictionary_lookup_label_is_localized(self) -> None:
         self.assertEqual(build_dictionary_lookup_label("da"), "Slå op i Den Danske Ordbog")
         self.assertEqual(build_dictionary_lookup_label("en"), "Slå op i Wiktionary")
+
+
+class PlayerStatsTests(unittest.TestCase):
+    def make_stats_path(self) -> Path:
+        return Path(__file__).parent / f"stats_test_{uuid4().hex}.json"
+
+    def test_normalize_username_collapses_whitespace(self) -> None:
+        self.assertEqual(normalize_username("  Ada   Lovelace  "), "Ada Lovelace")
+
+    def test_build_empty_stats_covers_every_attempt(self) -> None:
+        stats = build_empty_stats()
+        self.assertEqual(stats["played"], 0)
+        self.assertEqual(stats["guessDistribution"], {str(attempt): 0 for attempt in range(1, 7)})
+
+    def test_record_game_result_updates_win_percentage_streak_and_distribution(self) -> None:
+        stats_path = self.make_stats_path()
+        try:
+            first_payload = record_game_result("Ada", "da", True, 4, stats_path=stats_path)
+            second_payload = record_game_result("Ada", "da", True, 2, stats_path=stats_path)
+            third_payload = record_game_result("Ada", "da", False, 6, stats_path=stats_path)
+        finally:
+            stats_path.unlink(missing_ok=True)
+
+        self.assertEqual(first_payload["played"], 1)
+        self.assertEqual(first_payload["wins"], 1)
+        self.assertEqual(first_payload["winPercentage"], 100)
+        self.assertEqual(first_payload["currentStreak"], 1)
+        self.assertEqual(first_payload["maxStreak"], 1)
+        self.assertEqual(first_payload["guessDistribution"][3], {"attempt": 4, "count": 1})
+
+        self.assertEqual(second_payload["played"], 2)
+        self.assertEqual(second_payload["wins"], 2)
+        self.assertEqual(second_payload["currentStreak"], 2)
+        self.assertEqual(second_payload["maxStreak"], 2)
+        self.assertEqual(second_payload["guessDistribution"][1], {"attempt": 2, "count": 1})
+
+        self.assertEqual(third_payload["played"], 3)
+        self.assertEqual(third_payload["wins"], 2)
+        self.assertEqual(third_payload["winPercentage"], 67)
+        self.assertEqual(third_payload["currentStreak"], 0)
+        self.assertEqual(third_payload["maxStreak"], 2)
+
+    def test_get_stats_payload_returns_existing_language_specific_stats(self) -> None:
+        stats_path = self.make_stats_path()
+        try:
+            record_game_result("Ada", "da", True, 3, stats_path=stats_path)
+            record_game_result("Ada", "en", False, 6, stats_path=stats_path)
+            da_payload = get_stats_payload("Ada", "da", stats_path=stats_path)
+            en_payload = get_stats_payload("Ada", "en", stats_path=stats_path)
+        finally:
+            stats_path.unlink(missing_ok=True)
+
+        self.assertEqual(da_payload["wins"], 1)
+        self.assertEqual(da_payload["played"], 1)
+        self.assertEqual(da_payload["guessDistribution"][2], {"attempt": 3, "count": 1})
+        self.assertEqual(en_payload["wins"], 0)
+        self.assertEqual(en_payload["played"], 1)
+        self.assertEqual(en_payload["currentStreak"], 0)
+
+    def test_reset_stats_can_remove_single_language_only(self) -> None:
+        stats_path = self.make_stats_path()
+        try:
+            record_game_result("Ada", "da", True, 3, stats_path=stats_path)
+            record_game_result("Ada", "en", False, 6, stats_path=stats_path)
+
+            was_reset = reset_stats("Ada", "da", stats_path=stats_path)
+            da_payload = get_stats_payload("Ada", "da", stats_path=stats_path)
+            en_payload = get_stats_payload("Ada", "en", stats_path=stats_path)
+        finally:
+            stats_path.unlink(missing_ok=True)
+
+        self.assertTrue(was_reset)
+        self.assertEqual(da_payload["played"], 0)
+        self.assertEqual(da_payload["wins"], 0)
+        self.assertEqual(en_payload["played"], 1)
+        self.assertEqual(en_payload["wins"], 0)
+
+    def test_reset_stats_without_language_removes_all_user_stats(self) -> None:
+        stats_path = self.make_stats_path()
+        try:
+            record_game_result("Ada", "da", True, 3, stats_path=stats_path)
+            record_game_result("Ada", "en", True, 2, stats_path=stats_path)
+
+            was_reset = reset_stats("Ada", stats_path=stats_path)
+            da_payload = get_stats_payload("Ada", "da", stats_path=stats_path)
+            en_payload = get_stats_payload("Ada", "en", stats_path=stats_path)
+        finally:
+            stats_path.unlink(missing_ok=True)
+
+        self.assertTrue(was_reset)
+        self.assertEqual(da_payload["played"], 0)
+        self.assertEqual(en_payload["played"], 0)
 
 
 class WebServerTests(unittest.TestCase):
