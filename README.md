@@ -14,6 +14,14 @@ in a terminal.
 
 (6. use the wordlesolver script if the puzzle is too hard.)
 
+You can reset your stats by typing the following in the terminal
+
+```bash
+py main.py --reset-stats Alice # all stats for both languages for the user
+py main.py --reset-stats Alice --language da # only danish
+py main.py --reset-stats Alice --language en # only english
+```
+
 # WordleSolver
 1. select wordist by editing the wordlist line ('words', 'dkwords')
 2. type in your grey letters in the GREY list.
