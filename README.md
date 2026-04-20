@@ -28,3 +28,30 @@ py main.py --reset-stats Alice --language en # only english
 3. type in your yellows and their positions in the YELLOWS dict.
 4. Do the same for the potential greens.
 5. Enjoy
+
+# ContextoSolver
+1. Start the terminal helper:
+
+```bash
+py contextosolver/contextosolver.py
+```
+
+2. Type a guess word, then type the rank Contexto showed on the webpage.
+
+3. After each guess, the script prints the top 10 next suggestions in the terminal.
+
+4. Helpful commands inside the session:
+
+`list` shows the guesses for the current puzzle.
+`clear` resets the current puzzle.
+`quit` exits the program.
+
+You can still use the command-based mode if you want:
+
+```bash
+py contextosolver/contextosolver.py play
+py contextosolver/contextosolver.py add ocean 45
+py contextosolver/contextosolver.py suggest --guess ocean:45 --guess beach:120
+```
+
+The script uses the Datamuse related-words API, so it works best with an internet connection.

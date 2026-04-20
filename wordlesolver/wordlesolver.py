@@ -4,12 +4,12 @@ from pathlib import Path
 WORDLIST = "dkwords.csv"
 
 # all the grey letters inside ""
-GREY = set("nisabrtg")
+GREY = set("peniabortæt")
 
 YELLOW = {
     # "letter": {index 0-4} 
-     #"n": {2, 1},
-     #"t": {0, 4, 3},
+     "s": {2,4},
+     "l": {0},
      #"s": {4, 0},
     # "u": {2},
     # "r": {3}
@@ -17,11 +17,11 @@ YELLOW = {
 
 GREEN = {
     # index: "letter"
-    0: "k",
+    #0: "k",
     #1: "e",
-    2: "o",
-    3: "v",
-    4: "e",
+    #2: "a",
+    #3: "v",
+    #4: "e",
     
 }
 
