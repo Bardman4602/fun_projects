@@ -11,7 +11,10 @@ class ContextoSolverTests(unittest.TestCase):
         return Path(__file__).parent / f"history_test_{uuid4().hex}.json"
 
     def test_rank_weight_prefers_better_ranks(self) -> None:
-        self.assertGreater(solver.rank_weight(10), solver.rank_weight(1000))
+        self.assertGreater(
+            solver.rank_weight(10, best_rank=10),
+            solver.rank_weight(1000, best_rank=10),
+        )
 
     def test_upsert_guess_list_normalizes_and_sorts(self) -> None:
         guesses = solver.upsert_guess_list([], "  Ocean  ", 120)
@@ -68,6 +71,48 @@ class ContextoSolverTests(unittest.TestCase):
             ["ocean", "beach"],
         )
 
+    def test_score_candidates_strongly_prefers_the_best_ranked_guess(self) -> None:
+        guesses = [
+            {"word": "late", "rank": 69},
+            {"word": "music", "rank": 138},
+            {"word": "tune", "rank": 771},
+            {"word": "song", "rank": 957},
+        ]
+
+        def fake_expand_guess(word: str, **_: object) -> dict[str, float]:
+            if word == "late":
+                return {"delay": 8.0}
+            if word == "music":
+                return {"singing": 8.0}
+            if word == "tune":
+                return {"singing": 8.0}
+            if word == "song":
+                return {"singing": 8.0}
+            return {}
+
+        with patch.object(solver, "expand_guess", side_effect=fake_expand_guess):
+            suggestions = solver.score_candidates(guesses)
+
+        self.assertEqual(suggestions[0]["word"], "delay")
+        self.assertEqual(suggestions[1]["word"], "singing")
+
+    def test_score_candidates_excludes_all_previously_guessed_words(self) -> None:
+        seed_guesses = [
+            {"word": "ocean", "rank": 30},
+        ]
+
+        def fake_expand_guess(word: str, **_: object) -> dict[str, float]:
+            self.assertEqual(word, "ocean")
+            return {"beach": 9.0, "water": 8.0}
+
+        with patch.object(solver, "expand_guess", side_effect=fake_expand_guess):
+            suggestions = solver.score_candidates(
+                seed_guesses,
+                excluded_words={"ocean", "beach"},
+            )
+
+        self.assertEqual([item["word"] for item in suggestions], ["water"])
+
     def test_expand_guess_keeps_best_relation_score_per_candidate(self) -> None:
         responses = {
             "ml": [{"word": "water", "score": 300}],
@@ -89,6 +134,31 @@ class ContextoSolverTests(unittest.TestCase):
         self.assertIn("foam", expanded)
         self.assertGreater(expanded["water"], expanded["foam"])
 
+    def test_expand_guess_filters_out_invalid_contexto_suggestions(self) -> None:
+        responses = {
+            "ml": [
+                {"word": "ice cream", "score": 400},
+                {"word": "mother-in-law", "score": 300},
+                {"word": "sundae", "score": 200},
+            ],
+            "rel_trg": [],
+            "rel_syn": [],
+            "rel_spc": [],
+            "rel_gen": [],
+        }
+
+        def fake_fetch(params: dict[str, str], timeout: float = 10.0) -> list[dict[str, int | str]]:
+            del timeout
+            relation = next(key for key in params if key in solver.RELATION_WEIGHTS)
+            return responses[relation]
+
+        with patch.object(solver, "fetch_datamuse", side_effect=fake_fetch):
+            expanded = solver.expand_guess("dessert")
+
+        self.assertNotIn("ice cream", expanded)
+        self.assertNotIn("mother-in-law", expanded)
+        self.assertIn("sundae", expanded)
+
     def test_run_play_collects_guess_and_prints_ranked_suggestions(self) -> None:
         prompts: list[str] = []
         outputs: list[str] = []
@@ -104,9 +174,11 @@ class ContextoSolverTests(unittest.TestCase):
         def fake_score(
             guesses: list[dict[str, int | str]],
             *,
+            excluded_words: set[str],
             per_guess_limit: int,
         ) -> list[dict[str, object]]:
             self.assertEqual(guesses, [{"word": "ocean", "rank": 45}])
+            self.assertEqual(excluded_words, {"ocean"})
             self.assertEqual(per_guess_limit, solver.MAX_EXPANSION_PER_QUERY)
             return [
                 {

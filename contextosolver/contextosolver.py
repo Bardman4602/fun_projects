@@ -37,9 +37,16 @@ def normalize_word(word: str) -> str:
     return normalized
 
 
-def rank_weight(rank: int) -> float:
+def is_contexto_word(word: str) -> bool:
+    return " " not in word and "-" not in word and "'" not in word
+
+
+def rank_weight(rank: int, *, best_rank: int | None = None) -> float:
     rank = validate_rank(rank)
-    return 1.0 / math.log2(rank + 2)
+    if best_rank is None:
+        best_rank = rank
+    best_rank = validate_rank(best_rank)
+    return best_rank / rank
 
 
 def validate_rank(rank: int) -> int:
@@ -149,6 +156,8 @@ def expand_guess(
                 normalized_candidate = normalize_word(candidate)
             except ValueError:
                 continue
+            if not is_contexto_word(normalized_candidate):
+                continue
             candidate_score = relation_weight * math.log1p(float(raw_score))
             if candidate_score > candidates.get(normalized_candidate, 0.0):
                 candidates[normalized_candidate] = candidate_score
@@ -159,16 +168,20 @@ def expand_guess(
 def score_candidates(
     guesses: list[dict[str, int | str]],
     *,
+    excluded_words: set[str] | None = None,
     per_guess_limit: int = MAX_EXPANSION_PER_QUERY,
     timeout: float = 10.0,
 ) -> list[dict[str, Any]]:
     aggregate: dict[str, dict[str, Any]] = {}
     guessed_words = {str(guess["word"]) for guess in guesses}
+    if excluded_words is not None:
+        guessed_words |= {normalize_word(word) for word in excluded_words}
+    best_rank = min(int(guess["rank"]) for guess in guesses)
 
     for guess in guesses:
         source_word = str(guess["word"])
         source_rank = int(guess["rank"])
-        source_weight = rank_weight(source_rank)
+        source_weight = rank_weight(source_rank, best_rank=best_rank)
         for candidate, api_score in expand_guess(
             source_word,
             limit=per_guess_limit,
@@ -354,6 +367,7 @@ def run_suggest(args: argparse.Namespace) -> int:
     print("Fetching related words and scoring candidates...")
     suggestions = score_candidates(
         seed_guesses,
+        excluded_words={str(guess["word"]) for guess in guesses},
         per_guess_limit=max(1, args.per_guess_limit),
     )
 
@@ -446,6 +460,7 @@ def run_play(
         try:
             suggestions = score_func(
                 seed_guesses,
+                excluded_words={str(guess["word"]) for guess in guesses},
                 per_guess_limit=per_guess_limit,
             )
         except urllib.error.URLError as exc:
