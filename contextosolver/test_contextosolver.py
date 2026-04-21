@@ -16,6 +16,21 @@ class ContextoSolverTests(unittest.TestCase):
             solver.rank_weight(1000, best_rank=10),
         )
 
+    def test_build_topic_words_uses_other_best_guesses_only(self) -> None:
+        guesses = [
+            {"word": "late", "rank": 69},
+            {"word": "music", "rank": 138},
+            {"word": "tune", "rank": 771},
+            {"word": "song", "rank": 957},
+            {"word": "radio", "rank": 1060},
+            {"word": "melody", "rank": 6013},
+        ]
+
+        self.assertEqual(
+            solver.build_topic_words(guesses, "late"),
+            ["music", "tune", "song", "radio"],
+        )
+
     def test_upsert_guess_list_normalizes_and_sorts(self) -> None:
         guesses = solver.upsert_guess_list([], "  Ocean  ", 120)
         guesses = solver.upsert_guess_list(guesses, "wave", 42)
@@ -96,6 +111,33 @@ class ContextoSolverTests(unittest.TestCase):
         self.assertEqual(suggestions[0]["word"], "delay")
         self.assertEqual(suggestions[1]["word"], "singing")
 
+    def test_score_candidates_boosts_candidates_supported_by_multiple_good_guesses(self) -> None:
+        guesses = [
+            {"word": "late", "rank": 69},
+            {"word": "delay", "rank": 90},
+            {"word": "music", "rank": 138},
+        ]
+
+        def fake_expand_guess(
+            word: str,
+            *,
+            topic_words: list[str] | None = None,
+            **_: object,
+        ) -> dict[str, float]:
+            self.assertIsNotNone(topic_words)
+            if word == "late":
+                return {"tardy": 0.95, "posterior": 0.7}
+            if word == "delay":
+                return {"tardy": 0.9}
+            if word == "music":
+                return {"posterior": 0.92}
+            return {}
+
+        with patch.object(solver, "expand_guess", side_effect=fake_expand_guess):
+            suggestions = solver.score_candidates(guesses)
+
+        self.assertEqual(suggestions[0]["word"], "tardy")
+
     def test_score_candidates_excludes_all_previously_guessed_words(self) -> None:
         seed_guesses = [
             {"word": "ocean", "rank": 30},
@@ -133,6 +175,22 @@ class ContextoSolverTests(unittest.TestCase):
         self.assertIn("water", expanded)
         self.assertIn("foam", expanded)
         self.assertGreater(expanded["water"], expanded["foam"])
+
+    def test_expand_guess_adds_contextual_topic_queries(self) -> None:
+        calls: list[dict[str, str]] = []
+
+        def fake_fetch(params: dict[str, str], timeout: float = 10.0) -> list[dict[str, int | str]]:
+            del timeout
+            calls.append(params)
+            if "topics" in params:
+                return [{"word": "delay", "score": 300}]
+            return [{"word": "lateness", "score": 300}]
+
+        with patch.object(solver, "fetch_datamuse", side_effect=fake_fetch):
+            expanded = solver.expand_guess("late", topic_words=["music", "tune"])
+
+        self.assertIn("delay", expanded)
+        self.assertTrue(any(call.get("topics") == "music tune" for call in calls))
 
     def test_expand_guess_filters_out_invalid_contexto_suggestions(self) -> None:
         responses = {

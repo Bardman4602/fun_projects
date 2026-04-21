@@ -15,7 +15,10 @@ HISTORY_PATH = Path(__file__).with_name("history.json")
 DATAMUSE_URL = "https://api.datamuse.com/words"
 DEFAULT_LIMIT = 10
 DEFAULT_SEED_COUNT = 5
-MAX_EXPANSION_PER_QUERY = 40
+MAX_EXPANSION_PER_QUERY = 120
+MAX_TOPIC_WORDS = 4
+TOPIC_CONTEXT_WEIGHT = 1.15
+SUPPORT_BONUS = 0.2
 RELATION_WEIGHTS = {
     "ml": 1.0,
     "rel_trg": 0.75,
@@ -61,6 +64,23 @@ def parse_rank_text(value: str) -> int:
     except ValueError as exc:
         raise ValueError("rank must be a positive integer") from exc
     return validate_rank(rank)
+
+
+def build_topic_words(
+    guesses: list[dict[str, int | str]],
+    source_word: str,
+    *,
+    max_topics: int = MAX_TOPIC_WORDS,
+) -> list[str]:
+    topics: list[str] = []
+    for guess in guesses:
+        word = str(guess["word"])
+        if word == source_word or word in topics:
+            continue
+        topics.append(word)
+        if len(topics) >= max_topics:
+            break
+    return topics
 
 
 def load_history(path: Path = HISTORY_PATH) -> list[dict[str, int | str]]:
@@ -136,31 +156,59 @@ def fetch_datamuse(params: dict[str, str], timeout: float = 10.0) -> list[dict[s
     return [item for item in payload if isinstance(item, dict)]
 
 
+def score_datamuse_entry(position: int, raw_score: float, top_score: float) -> float:
+    rank_component = 1.0 / math.sqrt(position + 1)
+    if top_score > 0:
+        score_component = math.log1p(max(0.0, raw_score)) / math.log1p(top_score)
+    else:
+        score_component = rank_component
+    return 0.7 * rank_component + 0.3 * score_component
+
+
 def expand_guess(
     word: str,
     *,
+    topic_words: list[str] | None = None,
     limit: int = MAX_EXPANSION_PER_QUERY,
     timeout: float = 10.0,
 ) -> dict[str, float]:
     candidates: dict[str, float] = {}
+    query_variants: list[tuple[dict[str, str], float]] = [({}, 1.0)]
+    if topic_words:
+        query_variants.append(
+            ({"topics": " ".join(topic_words[:MAX_TOPIC_WORDS])}, TOPIC_CONTEXT_WEIGHT)
+        )
+
     for relation, relation_weight in RELATION_WEIGHTS.items():
-        params = {relation: word, "max": str(limit)}
-        for entry in fetch_datamuse(params, timeout=timeout):
-            candidate = entry.get("word")
-            raw_score = entry.get("score", 0)
-            if not isinstance(candidate, str):
-                continue
-            if not isinstance(raw_score, (int, float)):
-                raw_score = 0
-            try:
-                normalized_candidate = normalize_word(candidate)
-            except ValueError:
-                continue
-            if not is_contexto_word(normalized_candidate):
-                continue
-            candidate_score = relation_weight * math.log1p(float(raw_score))
-            if candidate_score > candidates.get(normalized_candidate, 0.0):
-                candidates[normalized_candidate] = candidate_score
+        for extra_params, context_weight in query_variants:
+            params = {relation: word, "max": str(limit), **extra_params}
+            entries = fetch_datamuse(params, timeout=timeout)
+            top_score = 0.0
+            for entry in entries:
+                raw_score = entry.get("score", 0)
+                if isinstance(raw_score, (int, float)) and raw_score > 0:
+                    top_score = float(raw_score)
+                    break
+            for index, entry in enumerate(entries):
+                candidate = entry.get("word")
+                raw_score = entry.get("score", 0)
+                if not isinstance(candidate, str):
+                    continue
+                if not isinstance(raw_score, (int, float)):
+                    raw_score = 0
+                try:
+                    normalized_candidate = normalize_word(candidate)
+                except ValueError:
+                    continue
+                if not is_contexto_word(normalized_candidate):
+                    continue
+                candidate_score = (
+                    relation_weight
+                    * context_weight
+                    * score_datamuse_entry(index, float(raw_score), top_score)
+                )
+                if candidate_score > candidates.get(normalized_candidate, 0.0):
+                    candidates[normalized_candidate] = candidate_score
     candidates.pop(normalize_word(word), None)
     return candidates
 
@@ -182,8 +230,10 @@ def score_candidates(
         source_word = str(guess["word"])
         source_rank = int(guess["rank"])
         source_weight = rank_weight(source_rank, best_rank=best_rank)
+        topic_words = build_topic_words(guesses, source_word)
         for candidate, api_score in expand_guess(
             source_word,
+            topic_words=topic_words,
             limit=per_guess_limit,
             timeout=timeout,
         ).items():
@@ -208,6 +258,10 @@ def score_candidates(
                     "score": round(weighted_score, 3),
                 }
             )
+
+    for item in aggregate.values():
+        support_count = len(item["support"])
+        item["score"] *= 1.0 + SUPPORT_BONUS * (support_count - 1)
 
     results = sorted(
         aggregate.values(),

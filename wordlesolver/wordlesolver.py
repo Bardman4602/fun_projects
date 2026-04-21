@@ -1,16 +1,16 @@
 from pathlib import Path
 
 # Choose wordlist
-WORDLIST = "dkwords.csv"
+WORDLIST = "words.csv"
 
 # all the grey letters inside ""
-GREY = set("peniabortæt")
+GREY = set("pnisabot")
 
 YELLOW = {
     # "letter": {index 0-4} 
-     "s": {2,4},
-     "l": {0},
-     #"s": {4, 0},
+    #  "e": {1,4},
+    #  "a": {0,2},
+    #  "l": {1},
     # "u": {2},
     # "r": {3}
 }
@@ -18,10 +18,10 @@ YELLOW = {
 GREEN = {
     # index: "letter"
     #0: "k",
-    #1: "e",
-    #2: "a",
-    #3: "v",
-    #4: "e",
+    1: "e",
+    #2: "o",
+    3: "r",
+    #4: "s",
     
 }
 

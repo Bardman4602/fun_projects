@@ -1,3 +1,42 @@
 {
-  "users": {}
+  "users": {
+    "bard": {
+      "displayName": "Bard",
+      "languages": {
+        "en": {
+          "played": 4,
+          "wins": 4,
+          "currentStreak": 4,
+          "maxStreak": 4,
+          "guessDistribution": {
+            "1": 0,
+            "2": 0,
+            "3": 2,
+            "4": 1,
+            "5": 0,
+            "6": 1
+          }
+        }
+      }
+    },
+    "nath": {
+      "displayName": "Nath",
+      "languages": {
+        "en": {
+          "played": 1,
+          "wins": 1,
+          "currentStreak": 1,
+          "maxStreak": 1,
+          "guessDistribution": {
+            "1": 0,
+            "2": 0,
+            "3": 0,
+            "4": 0,
+            "5": 1,
+            "6": 0
+          }
+        }
+      }
+    }
+  }
 }
