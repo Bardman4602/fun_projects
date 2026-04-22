@@ -20,6 +20,7 @@ BASE_DIR = Path(__file__).resolve().parent
 STATIC_DIR = BASE_DIR / "static"
 WORDLIST_DIR = BASE_DIR / "wordlists"
 STATS_FILE = BASE_DIR / "player_stats.json"
+EXCLUDED_WORDS_FILE = BASE_DIR / "excluded_words.json"
 WORDLISTS = {
     "da": ("Dansk", WORDLIST_DIR / "dkwords.csv"),
     "en": ("English", WORDLIST_DIR / "words.csv"),
@@ -63,6 +64,7 @@ CONTENT_TYPES = {
 }
 FALLBACK_PORTS = (8765, 8080, 3000, 5500, 0)
 STATS_LOCK = threading.Lock()
+WORDS_LOCK = threading.Lock()
 
 
 def parse_args() -> argparse.Namespace:
@@ -99,7 +101,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_words(language_code: str) -> list[str]:
+def load_base_words(language_code: str) -> list[str]:
     if language_code in WORD_CACHE:
         return WORD_CACHE[language_code]
 
@@ -116,6 +118,65 @@ def load_words(language_code: str) -> list[str]:
 
     WORD_CACHE[language_code] = sorted(words)
     return WORD_CACHE[language_code]
+
+
+def read_excluded_words_store(excluded_words_path: Path = EXCLUDED_WORDS_FILE) -> dict[str, object]:
+    if not excluded_words_path.exists():
+        return {}
+
+    try:
+        payload = json.loads(excluded_words_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    return payload
+
+
+def write_excluded_words_store(
+    store: dict[str, object],
+    excluded_words_path: Path = EXCLUDED_WORDS_FILE,
+) -> None:
+    excluded_words_path.write_text(
+        json.dumps(store, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def get_excluded_words(
+    language_code: str,
+    excluded_words_path: Path = EXCLUDED_WORDS_FILE,
+) -> set[str]:
+    store = read_excluded_words_store(excluded_words_path)
+    raw_words = store.get(language_code, [])
+    if not isinstance(raw_words, list):
+        return set()
+
+    excluded_words: set[str] = set()
+    for raw_word in raw_words:
+        if not isinstance(raw_word, str):
+            continue
+        normalized_word = raw_word.strip().lower()
+        if len(normalized_word) == WORD_LENGTH and normalized_word.isalpha():
+            excluded_words.add(normalized_word)
+
+    return excluded_words
+
+
+def load_words(
+    language_code: str,
+    excluded_words_path: Path = EXCLUDED_WORDS_FILE,
+) -> list[str]:
+    with WORDS_LOCK:
+        words = load_base_words(language_code)
+        excluded_words = get_excluded_words(language_code, excluded_words_path)
+
+    if not excluded_words:
+        return words.copy()
+
+    return [word for word in words if word not in excluded_words]
 
 
 def normalize_username(username: str) -> str:
@@ -504,6 +565,51 @@ def build_word_payload(language_code: str) -> bytes:
     return json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
+def remove_word_from_wordlist(
+    language_code: str,
+    word: str,
+    excluded_words_path: Path = EXCLUDED_WORDS_FILE,
+) -> dict[str, object]:
+    normalized_word = word.strip().lower()
+    if language_code not in WORDLISTS:
+        raise ValueError("Ukendt sprog.")
+    if len(normalized_word) != WORD_LENGTH or not normalized_word.isalpha():
+        raise ValueError("Ugyldigt ord.")
+
+    with WORDS_LOCK:
+        base_words = load_base_words(language_code)
+        if normalized_word not in base_words:
+            raise ValueError("Ordet findes ikke i ordlisten.")
+
+        excluded_words = get_excluded_words(language_code, excluded_words_path)
+        active_words = [candidate for candidate in base_words if candidate not in excluded_words]
+
+        if normalized_word in excluded_words:
+            return {
+                "language": language_code,
+                "word": normalized_word,
+                "removed": False,
+                "alreadyRemoved": True,
+                "remainingWords": len(active_words),
+            }
+
+        if len(active_words) <= 1:
+            raise ValueError("Kan ikke fjerne det sidste ord fra ordlisten.")
+
+        excluded_words.add(normalized_word)
+        store = read_excluded_words_store(excluded_words_path)
+        store[language_code] = sorted(excluded_words)
+        write_excluded_words_store(store, excluded_words_path)
+
+        return {
+            "language": language_code,
+            "word": normalized_word,
+            "removed": True,
+            "alreadyRemoved": False,
+            "remainingWords": len(active_words) - 1,
+        }
+
+
 def build_definition_payload(language_code: str, word: str) -> bytes:
     normalized_word = word.strip().lower()
     fallback_url = build_dictionary_lookup_url(language_code, normalized_word)
@@ -557,6 +663,10 @@ class LocalWordleHandler(BaseHTTPRequestHandler):
 
         if parsed_url.path == "/api/stats":
             self.record_stats()
+            return
+
+        if parsed_url.path == "/api/words/remove":
+            self.remove_word()
             return
 
         self.send_error(HTTPStatus.NOT_FOUND, "Siden blev ikke fundet.")
@@ -641,6 +751,34 @@ class LocalWordleHandler(BaseHTTPRequestHandler):
         try:
             payload = json.dumps(
                 record_game_result(username, language_code, won, attempts),
+                ensure_ascii=False,
+            ).encode("utf-8")
+        except ValueError as error:
+            self.send_error(HTTPStatus.BAD_REQUEST, str(error))
+            return
+
+        self.send_json_response(payload)
+
+    def remove_word(self) -> None:
+        content_length = int(self.headers.get("Content-Length", "0"))
+
+        try:
+            raw_body = self.rfile.read(content_length)
+            body = json.loads(raw_body.decode("utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            self.send_error(HTTPStatus.BAD_REQUEST, "Ugyldig JSON.")
+            return
+
+        if not isinstance(body, dict):
+            self.send_error(HTTPStatus.BAD_REQUEST, "Ugyldig JSON.")
+            return
+
+        language_code = str(body.get("language", "da")).lower()
+        word = body.get("word", "")
+
+        try:
+            payload = json.dumps(
+                remove_word_from_wordlist(language_code, str(word)),
                 ensure_ascii=False,
             ).encode("utf-8")
         except ValueError as error:

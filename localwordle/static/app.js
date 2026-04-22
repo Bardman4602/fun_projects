@@ -39,6 +39,10 @@ const state = {
   stats: null,
   statsRequestId: 0,
   lastCompletedAttempt: null,
+  isRemovingWord: false,
+  answerRemoved: false,
+  removeWordFeedback: "",
+  removeWordFeedbackTone: "",
 };
 
 const boardElement = document.querySelector("#board");
@@ -62,6 +66,8 @@ const definitionCard = document.querySelector("#definition-card");
 const definitionWord = document.querySelector("#definition-word");
 const definitionText = document.querySelector("#definition-text");
 const definitionLink = document.querySelector("#definition-link");
+const removeWordButton = document.querySelector("#remove-word-button");
+const removeWordFeedback = document.querySelector("#remove-word-feedback");
 
 function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
@@ -124,6 +130,22 @@ function saveUsername(username) {
   }
 }
 
+function updateUsername(rawUsername) {
+  const nextUsername = normalizeUsername(rawUsername);
+  const changed = nextUsername !== state.username;
+
+  state.username = nextUsername;
+  usernameInput.value = nextUsername;
+  saveUsername(nextUsername);
+
+  if (changed) {
+    state.stats = null;
+    state.lastCompletedAttempt = null;
+  }
+
+  return changed;
+}
+
 function createDistributionRow(entry, maxCount) {
   const row = document.createElement("div");
   row.className = "distribution-row";
@@ -150,12 +172,6 @@ function createDistributionRow(entry, maxCount) {
 }
 
 function renderStats() {
-  if (!state.isGameOver) {
-    statsCard.classList.add("hidden");
-    guessDistributionElement.innerHTML = "";
-    return;
-  }
-
   statsCard.classList.remove("hidden");
 
   if (!state.username) {
@@ -177,7 +193,7 @@ function renderStats() {
     return;
   }
 
-  statsSummary.textContent = `Statistik for ${state.stats.username} på ${state.languageName}`;
+  statsSummary.textContent = `${state.isGameOver ? "Statistik" : "Samlet statistik"} for ${state.stats.username} på ${state.languageName}`;
   statsEmpty.classList.add("hidden");
   statsContent.classList.remove("hidden");
   statsPlayed.textContent = String(state.stats.played);
@@ -199,6 +215,12 @@ function renderDefinition() {
     definitionText.textContent = "";
     definitionLink.classList.add("hidden");
     definitionLink.removeAttribute("href");
+    removeWordButton.classList.add("hidden");
+    removeWordButton.disabled = false;
+    removeWordButton.textContent = "Fjern ord fra ordlisten";
+    removeWordFeedback.classList.add("hidden");
+    removeWordFeedback.textContent = "";
+    removeWordFeedback.classList.remove("success", "error");
     return;
   }
 
@@ -219,10 +241,43 @@ function renderDefinition() {
     definitionLink.removeAttribute("href");
     definitionLink.textContent = "Slå op i ordbogen";
   }
+
+  if (state.isGameOver && state.answer) {
+    removeWordButton.classList.remove("hidden");
+    removeWordButton.disabled = state.isRemovingWord || state.answerRemoved;
+
+    if (state.isRemovingWord) {
+      removeWordButton.textContent = "Fjerner ord...";
+    } else if (state.answerRemoved) {
+      removeWordButton.textContent = "Ord fjernet fra ordlisten";
+    } else {
+      removeWordButton.textContent = "Fjern ord fra ordlisten";
+    }
+  } else {
+    removeWordButton.classList.add("hidden");
+    removeWordButton.disabled = false;
+    removeWordButton.textContent = "Fjern ord fra ordlisten";
+  }
+
+  if (state.removeWordFeedback) {
+    removeWordFeedback.textContent = state.removeWordFeedback;
+    removeWordFeedback.classList.remove("hidden", "success", "error");
+    if (state.removeWordFeedbackTone) {
+      removeWordFeedback.classList.add(state.removeWordFeedbackTone);
+    }
+  } else {
+    removeWordFeedback.classList.add("hidden");
+    removeWordFeedback.textContent = "";
+    removeWordFeedback.classList.remove("success", "error");
+  }
 }
 
 function clearDefinition() {
   state.answerDefinition = null;
+  state.isRemovingWord = false;
+  state.answerRemoved = false;
+  state.removeWordFeedback = "";
+  state.removeWordFeedbackTone = "";
   renderDefinition();
 }
 
@@ -371,6 +426,46 @@ async function loadAnswerDefinition() {
   }
 
   renderDefinition();
+}
+
+async function removeAnswerWord() {
+  if (!state.isGameOver || !state.answer || state.isRemovingWord || state.answerRemoved) {
+    return;
+  }
+
+  state.isRemovingWord = true;
+  state.removeWordFeedback = "";
+  state.removeWordFeedbackTone = "";
+  renderDefinition();
+
+  try {
+    const response = await fetch("/api/words/remove", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        language: state.language,
+        word: state.answer,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error("Kunne ikke fjerne ordet fra ordlisten.");
+    }
+
+    const payload = await response.json();
+    state.words = state.words.filter((candidate) => candidate !== payload.word);
+    state.validWords = new Set(state.words);
+    state.answerRemoved = Boolean(payload.removed || payload.alreadyRemoved);
+    state.removeWordFeedback = `${payload.word.toUpperCase()} er fjernet fra ${state.languageName.toLowerCase()} ordliste.`;
+    state.removeWordFeedbackTone = "success";
+  } catch (error) {
+    state.removeWordFeedback = error.message;
+    state.removeWordFeedbackTone = "error";
+  } finally {
+    state.isRemovingWord = false;
+    renderDefinition();
+  }
 }
 
 function updateKeyboard(guess, statuses) {
@@ -644,13 +739,13 @@ languageSelect.addEventListener("change", async (event) => {
 });
 
 usernameInput.addEventListener("change", async (event) => {
-  const nextUsername = normalizeUsername(event.target.value);
-  state.username = nextUsername;
-  usernameInput.value = nextUsername;
-  saveUsername(nextUsername);
-  state.stats = null;
-  state.lastCompletedAttempt = null;
+  updateUsername(event.target.value);
   await loadStats();
+});
+
+usernameInput.addEventListener("input", (event) => {
+  updateUsername(event.target.value);
+  renderStats();
 });
 
 usernameInput.addEventListener("keydown", (event) => {
@@ -682,6 +777,10 @@ definitionLink.addEventListener("click", (event) => {
 
   event.preventDefault();
   window.open(url, "_blank", "noopener,noreferrer");
+});
+
+removeWordButton.addEventListener("click", () => {
+  removeAnswerWord();
 });
 
 state.colorblindMode = readSavedColorblindMode();

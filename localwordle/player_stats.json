@@ -16,6 +16,20 @@
             "5": 0,
             "6": 1
           }
+        },
+        "da": {
+          "played": 2,
+          "wins": 2,
+          "currentStreak": 2,
+          "maxStreak": 2,
+          "guessDistribution": {
+            "1": 0,
+            "2": 0,
+            "3": 1,
+            "4": 0,
+            "5": 0,
+            "6": 1
+          }
         }
       }
     },

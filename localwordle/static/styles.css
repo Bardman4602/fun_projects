@@ -213,6 +213,43 @@ button:hover {
   text-decoration: underline;
 }
 
+.definition-actions {
+  margin-top: 0.95rem;
+}
+
+.danger-button {
+  border-color: rgba(128, 39, 20, 0.18);
+  background: #fff3ee;
+  color: #8b341b;
+  font-weight: 700;
+}
+
+.danger-button:hover {
+  background: #ffe7de;
+}
+
+.danger-button:disabled {
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+  background: #f8e8e1;
+  color: rgba(139, 52, 27, 0.72);
+}
+
+.definition-feedback {
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.definition-feedback.success {
+  color: var(--correct);
+}
+
+.definition-feedback.error {
+  color: #9a4022;
+}
+
 .stats-summary,
 .stats-empty {
   margin: 0.45rem 0 0;

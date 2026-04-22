@@ -15,6 +15,7 @@ from main import (
     get_stats_payload,
     load_words,
     normalize_username,
+    remove_word_from_wordlist,
     record_game_result,
     reset_stats,
     render_guess,
@@ -97,6 +98,9 @@ class WordListTests(unittest.TestCase):
 class PlayerStatsTests(unittest.TestCase):
     def make_stats_path(self) -> Path:
         return Path(__file__).parent / f"stats_test_{uuid4().hex}.json"
+
+    def make_excluded_words_path(self) -> Path:
+        return Path(__file__).parent / f"excluded_words_test_{uuid4().hex}.json"
 
     def test_normalize_username_collapses_whitespace(self) -> None:
         self.assertEqual(normalize_username("  Ada   Lovelace  "), "Ada Lovelace")
@@ -184,6 +188,36 @@ class PlayerStatsTests(unittest.TestCase):
         self.assertTrue(was_reset)
         self.assertEqual(da_payload["played"], 0)
         self.assertEqual(en_payload["played"], 0)
+
+    def test_remove_word_from_wordlist_excludes_word_from_future_loads(self) -> None:
+        excluded_words_path = self.make_excluded_words_path()
+        try:
+            original_words = load_words("da", excluded_words_path=excluded_words_path)
+            self.assertIn("abort", original_words)
+
+            payload = remove_word_from_wordlist("da", "abort", excluded_words_path=excluded_words_path)
+            filtered_words = load_words("da", excluded_words_path=excluded_words_path)
+        finally:
+            excluded_words_path.unlink(missing_ok=True)
+
+        self.assertTrue(payload["removed"])
+        self.assertFalse(payload["alreadyRemoved"])
+        self.assertNotIn("abort", filtered_words)
+        self.assertEqual(payload["remainingWords"], len(filtered_words))
+
+    def test_remove_word_from_wordlist_is_idempotent_for_already_removed_words(self) -> None:
+        excluded_words_path = self.make_excluded_words_path()
+        try:
+            first_payload = remove_word_from_wordlist("en", "water", excluded_words_path=excluded_words_path)
+            second_payload = remove_word_from_wordlist("en", "water", excluded_words_path=excluded_words_path)
+        finally:
+            excluded_words_path.unlink(missing_ok=True)
+
+        self.assertTrue(first_payload["removed"])
+        self.assertFalse(first_payload["alreadyRemoved"])
+        self.assertFalse(second_payload["removed"])
+        self.assertTrue(second_payload["alreadyRemoved"])
+        self.assertEqual(first_payload["remainingWords"], second_payload["remainingWords"])
 
 
 class WebServerTests(unittest.TestCase):
